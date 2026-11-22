@@ -52,6 +52,13 @@
 		table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 		th, td { border: 1px solid var(--border); padding: 0.35rem 0.5rem; text-align: left; vertical-align: top; }
 		th { font-weight: 600; }
+		h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+		fieldset { border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; margin: 0 0 1rem; }
+		legend { font-weight: 600; padding: 0 0.25rem; }
+		.checks { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+		.checks label, .inline { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: normal; margin: 0; }
+		.addresses { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; }
+		.address { border: 1px dashed var(--border); border-radius: 4px; padding: 0.5rem; white-space: pre-line; font-size: 0.9rem; }
 	</style>
 </head>
 <body>
@@ -64,9 +71,24 @@
 
 		<p class="status" id="status">No data yet.</p>
 
+		<section id="columns-section" hidden>
+			<fieldset>
+				<legend>Columns to use in addresses</legend>
+				<p class="hint">
+					<label class="inline"><input type="checkbox" id="has-header" checked> First row is a header row</label>
+				</p>
+				<div class="checks" id="column-checks"></div>
+			</fieldset>
+		</section>
+
 		<div class="table-wrap">
 			<table id="preview" hidden></table>
 		</div>
+
+		<section id="addresses-section" hidden>
+			<h2 id="addresses-title">Addresses</h2>
+			<div class="addresses" id="addresses"></div>
+		</section>
 	</main>
 
 	<script>
@@ -124,31 +146,107 @@
 			return rows.filter((r) => r.some((c) => c.trim() !== ''));
 		}
 
+		const hasHeader = document.getElementById('has-header');
+		const columnsSection = document.getElementById('columns-section');
+		const columnChecks = document.getElementById('column-checks');
+		const addressesSection = document.getElementById('addresses-section');
+		const addressesTitle = document.getElementById('addresses-title');
+		const addressesEl = document.getElementById('addresses');
+
+		// Column indexes the user has unchecked; columns are checked by default.
+		const excluded = new Set();
+
+		const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+		function columnLabel(header, c) {
+			const name = header && header[c] ? header[c].trim() : '';
+			return name || `Column ${c + 1}`;
+		}
+
+		function renderColumnChecks(header, cols) {
+			columnChecks.replaceChildren();
+			for (let c = 0; c < cols; c++) {
+				const label = document.createElement('label');
+				const box = document.createElement('input');
+				box.type = 'checkbox';
+				box.checked = !excluded.has(c);
+				box.addEventListener('change', () => {
+					box.checked ? excluded.delete(c) : excluded.add(c);
+					render();
+				});
+				label.append(box, columnLabel(header, c));
+				columnChecks.append(label);
+			}
+		}
+
+		function renderTable(header, body, cols) {
+			preview.replaceChildren();
+			if (header) {
+				const tr = preview.createTHead().insertRow();
+				for (let c = 0; c < cols; c++) {
+					const th = document.createElement('th');
+					th.textContent = columnLabel(header, c);
+					tr.append(th);
+				}
+			}
+			const tbody = preview.createTBody();
+			for (const r of body) {
+				const tr = tbody.insertRow();
+				for (let c = 0; c < cols; c++) {
+					const td = tr.insertCell();
+					td.textContent = r[c] ?? '';
+					td.style.whiteSpace = 'pre-wrap';
+					if (excluded.has(c)) td.style.opacity = '0.4';
+				}
+			}
+			preview.hidden = false;
+		}
+
+		/** Each address is the selected columns' non-empty values, one per line. */
+		function buildAddresses(body, cols) {
+			const selected = [...Array(cols).keys()].filter((c) => !excluded.has(c));
+			return body
+				.map((r) => selected
+					.map((c) => (r[c] ?? '').trim())
+					.filter(Boolean)
+					.join('\n'))
+				.filter(Boolean);
+		}
+
 		function render() {
 			const rows = parseTsv(textarea.value);
-			preview.replaceChildren();
 
 			if (!rows.length) {
 				preview.hidden = true;
+				columnsSection.hidden = true;
+				addressesSection.hidden = true;
 				status.textContent = 'No data yet.';
 				return;
 			}
 
 			const cols = Math.max(...rows.map((r) => r.length));
-			for (const r of rows) {
-				const tr = preview.insertRow();
-				for (let c = 0; c < cols; c++) {
-					const td = tr.insertCell();
-					td.textContent = r[c] ?? '';
-					td.style.whiteSpace = 'pre-wrap';
-				}
-			}
+			const header = hasHeader.checked ? rows[0] : null;
+			const body = hasHeader.checked ? rows.slice(1) : rows;
 
-			preview.hidden = false;
-			status.textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}, ${cols} column${cols === 1 ? '' : 's'}`;
+			renderColumnChecks(header, cols);
+			renderTable(header, body, cols);
+			columnsSection.hidden = false;
+
+			const addresses = buildAddresses(body, cols);
+			addressesEl.replaceChildren(...addresses.map((text) => {
+				const div = document.createElement('div');
+				div.className = 'address';
+				div.textContent = text;
+				return div;
+			}));
+			addressesTitle.textContent = `Addresses (${addresses.length})`;
+			addressesSection.hidden = false;
+
+			status.textContent = `${plural(body.length, 'row')}, ${plural(cols, 'column')}`;
 		}
 
 		textarea.addEventListener('input', render);
+		hasHeader.addEventListener('change', render);
 		render();
 	</script>
 </body>
