@@ -57,16 +57,54 @@
 		legend { font-weight: 600; padding: 0 0.25rem; }
 		.checks { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
 		.checks label, .inline { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: normal; margin: 0; }
-		.addresses { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; }
-		.address { border: 1px dashed var(--border); border-radius: 4px; padding: 0.5rem; white-space: pre-line; font-size: 0.9rem; }
+		/*
+		 * Avery 8160: US Letter (8.5in × 11in), 30 labels in 3 columns × 10 rows.
+		 * Each label is 2.625in × 1in. Top/bottom margin 0.5in, side margin
+		 * 0.1875in, and 0.125in between columns (no gap between rows).
+		 */
+		.sheets { overflow-x: auto; padding-bottom: 0.5rem; }
+		.sheet {
+			box-sizing: border-box;
+			width: 8.5in;
+			height: 11in;
+			padding: 0.5in 0.1875in;
+			display: grid;
+			grid-template-columns: repeat(3, 2.625in);
+			grid-auto-rows: 1in;
+			column-gap: 0.125in;
+			align-content: start;
+			overflow: hidden;
+			background: #fff;
+			color: #000;
+			margin: 0 0 1rem;
+			box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+		}
+		.label {
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			padding: 0 0.15in;
+			overflow: hidden;
+			white-space: pre-line;
+			font-size: 10pt;
+			line-height: 1.2;
+			/* Outline (not border) so the guide doesn't change the label's size. */
+			outline: 1px dashed #bbb;
+			outline-offset: -1px;
+			border-radius: 0.0625in;
+		}
 
-		/* Print only the addresses. */
+		/* Print only the label sheets, at actual size. */
+		@page { size: letter; margin: 0; }
 		@media print {
-			body { padding: 0; background: #fff; color: #000; }
+			body { padding: 0; background: #fff; }
 			main { max-width: none; }
 			main > :not(#addresses-section),
-			#addresses-title { display: none !important; }
-			.address { border: none; break-inside: avoid; color: #000; }
+			#addresses-section > :not(.sheets) { display: none !important; }
+			.sheets { overflow: visible; padding: 0; }
+			.sheet { margin: 0; box-shadow: none; break-after: page; }
+			.sheet:last-child { break-after: auto; }
+			.label { outline: none; }
 		}
 	</style>
 </head>
@@ -96,7 +134,8 @@
 
 		<section id="addresses-section" hidden>
 			<h2 id="addresses-title">Addresses</h2>
-			<div class="addresses" id="addresses"></div>
+			<p class="hint">When printing, set scale to 100% (not “Fit to page”) and margins to None/Default so the labels line up.</p>
+			<div class="sheets" id="addresses"></div>
 		</section>
 	</main>
 
@@ -161,6 +200,8 @@
 		const addressesSection = document.getElementById('addresses-section');
 		const addressesTitle = document.getElementById('addresses-title');
 		const addressesEl = document.getElementById('addresses');
+
+		const LABELS_PER_SHEET = 30; // Avery 8160: 3 columns × 10 rows.
 
 		// Column indexes the user has unchecked; columns are checked by default.
 		const excluded = new Set();
@@ -242,13 +283,20 @@
 			columnsSection.hidden = false;
 
 			const addresses = buildAddresses(body, cols);
-			addressesEl.replaceChildren(...addresses.map((text) => {
-				const div = document.createElement('div');
-				div.className = 'address';
-				div.textContent = text;
-				return div;
-			}));
-			addressesTitle.textContent = `Addresses (${addresses.length})`;
+			const sheets = [];
+			for (let i = 0; i < addresses.length; i += LABELS_PER_SHEET) {
+				const sheet = document.createElement('div');
+				sheet.className = 'sheet';
+				for (const text of addresses.slice(i, i + LABELS_PER_SHEET)) {
+					const label = document.createElement('div');
+					label.className = 'label';
+					label.textContent = text;
+					sheet.append(label);
+				}
+				sheets.push(sheet);
+			}
+			addressesEl.replaceChildren(...sheets);
+			addressesTitle.textContent = `Addresses (${addresses.length}) · ${plural(sheets.length, 'sheet')}`;
 			addressesSection.hidden = false;
 
 			status.textContent = `${plural(body.length, 'row')}, ${plural(cols, 'column')}`;
